@@ -1,0 +1,21 @@
+### Java template
+*.class
+target/
+
+## Directory-based project format:
+*.iml
+.idea/
+
+.project
+.classpath
+.settings/
+
+# For local.conf config override
+local.conf
+
+# Test logs
+logs/
+
+#Other
+*.lck
+tmlog0.log
