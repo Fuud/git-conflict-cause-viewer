@@ -3,13 +3,18 @@ import Cool.GraphElementKind.LEFT
 import Cool.GraphElementKind.RIGHT
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.diff.DiffEntry
+import org.eclipse.jgit.internal.storage.file.FileRepository
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.revwalk.RevCommit
 import java.io.File
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.lib.Repository
+import org.eclipse.jgit.storage.file.FileBasedConfig
 import org.eclipse.jgit.treewalk.CanonicalTreeParser
 import org.eclipse.jgit.treewalk.AbstractTreeIterator
+import org.eclipse.jgit.treewalk.TreeWalk
+import org.eclipse.jgit.treewalk.filter.PathFilter
+import org.eclipse.jgit.treewalk.filter.TreeFilter
 
 
 fun main(args: Array<String>) {
@@ -46,11 +51,13 @@ class Cool(private val repository: Repository) {
     private fun makeAffectedGraph(conflictFile: String, mergeHead: Commit, origHead: Commit) {
 
 
-        fun GraphElement.traversGraphUpToBase(consumer: (GraphElement) -> Unit) {
+        fun GraphElement.traversGraphUpToBase(visited:MutableSet<GraphElement> = hashSetOf(), consumer: (GraphElement) -> Unit) {
             consumer(this)
+            visited.add(this)
             this.parents
                     .filter { !it.isMergeBase }
-                    .forEach { it.traversGraphUpToBase(consumer) }
+                    .filter { !visited.contains(it) }
+                    .forEach { it.traversGraphUpToBase(visited = visited, consumer = consumer) }
         }
 
         val graphElementRepo = mutableMapOf<ObjectId, GraphElement>()
@@ -67,24 +74,26 @@ class Cool(private val repository: Repository) {
         left.traversGraphUpToBase { graphElem ->
             val commit = graphElem.commit
             if (commit.affects(conflictFile)) {
-                println("our: ${commit.id.abbreviate(6).name()} ${commit.revCommit.shortMessage}")
+                println("their: ${commit.id.abbreviate(6).name()} ${commit.revCommit.shortMessage}")
             }
         }
 
         right.traversGraphUpToBase { graphElem ->
             val commit = graphElem.commit
             if (commit.affects(conflictFile)) {
-                println("their: ${commit.id.abbreviate(6).name()} ${commit.revCommit.shortMessage}")
+                println("our: ${commit.id.abbreviate(6).name()} ${commit.revCommit.shortMessage}")
             }
         }
         println("------------------")
     }
 
     //---
-    private fun diff(tree1: AbstractTreeIterator, tree2: AbstractTreeIterator): List<DiffEntry> =
+    private fun diff(tree1: AbstractTreeIterator, tree2: AbstractTreeIterator, file: String): List<DiffEntry> =
             git.diff()
                     .setOldTree(tree1)
                     .setNewTree(tree2)
+                    .setShowNameAndStatusOnly(true)
+                    .setPathFilter(PathFilter.create(file))
                     .call()
 
     //------------
@@ -100,9 +109,9 @@ class Cool(private val repository: Repository) {
         val tree: AbstractTreeIterator
             get() = CanonicalTreeParser().apply { reset(repository.newObjectReader(), revCommit.tree) }
 
-        fun diffTo(other: Commit) = diff(this.tree, other.tree)
+        fun diffTo(other: Commit, file: String) = diff(this.tree, other.tree, file)
 
-        fun affects(file: String) = parents.any { parent -> diffTo(parent).any { it.newPath == file || it.oldPath == file } }
+        fun affects(file: String) = parents.any { parent -> diffTo(parent, file).any { it.newPath == file || it.oldPath == file } }
 
         override fun toString(): String {
             return "Commit(id=$id)"
@@ -113,7 +122,8 @@ class Cool(private val repository: Repository) {
 
 
     class GraphElement(val commit: Commit, var kind: GraphElementKind, val graphElementRepo: MutableMap<ObjectId, GraphElement>) {
-        val isMergeBase = (kind == BASE)
+        val isMergeBase
+            get() = (kind == BASE)
 
         var message = commit.revCommit.shortMessage
         private var p: List<GraphElement>? = null
@@ -159,6 +169,17 @@ class Cool(private val repository: Repository) {
         LEFT,
         RIGHT,
         BASE
+    }
+
+    class CachedConfigFileRepository(gitDir: File) : FileRepository(gitDir){
+        var cachedConfig: FileBasedConfig? = null
+
+        override fun getConfig(): FileBasedConfig{
+            if (cachedConfig==null){
+                cachedConfig = super.getConfig()
+            }
+            return cachedConfig!!
+        }
     }
 }
 
