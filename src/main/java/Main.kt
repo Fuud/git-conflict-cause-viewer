@@ -70,18 +70,30 @@ class Cool(private val repository: Repository) {
             all = all.flatMap { it.parents }.toSet()
         }
 
+        val formatGraphElement = {graphElement: GraphElement ->
+            val merge = if (graphElement.parents.size > 1){
+                "[merge]"
+            }else{
+                ""
+            }
+
+            val message = graphElement.commit.revCommit.shortMessage
+            val id = graphElement.commit.id.abbreviate(6).name()
+            listOf(merge, id, message).joinToString(separator = " ")
+        }
+
         println("File $conflictFile:")
         left.traversGraphUpToBase { graphElem ->
             val commit = graphElem.commit
             if (commit.affects(conflictFile)) {
-                println("their: ${commit.id.abbreviate(6).name()} ${commit.revCommit.shortMessage}")
+                println("their: ${formatGraphElement(graphElem)}")
             }
         }
 
         right.traversGraphUpToBase { graphElem ->
             val commit = graphElem.commit
             if (commit.affects(conflictFile)) {
-                println("our: ${commit.id.abbreviate(6).name()} ${commit.revCommit.shortMessage}")
+                println("our: ${formatGraphElement(graphElem)}")
             }
         }
         println("------------------")
@@ -111,7 +123,7 @@ class Cool(private val repository: Repository) {
 
         fun diffTo(other: Commit, file: String) = diff(this.tree, other.tree, file)
 
-        fun affects(file: String) = parents.any { parent -> diffTo(parent, file).any { it.newPath == file || it.oldPath == file } }
+        fun affects(file: String) = parents.any { parent -> diffTo(parent, file).all { it.newPath == file || it.oldPath == file } }
 
         override fun toString(): String {
             return "Commit(id=$id)"
