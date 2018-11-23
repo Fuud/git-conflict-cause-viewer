@@ -123,7 +123,7 @@ class Cool(private val repository: Repository) {
 
         fun diffTo(other: Commit, file: String) = diff(this.tree, other.tree, file)
 
-        fun affects(file: String) = parents.any { parent -> diffTo(parent, file).all { it.newPath == file || it.oldPath == file } }
+        fun affects(file: String) = parents.all { parent -> diffTo(parent, file).any { it.newPath == file || it.oldPath == file } }
 
         override fun toString(): String {
             return "Commit(id=$id)"
